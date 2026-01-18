@@ -21,7 +21,7 @@ library(reticulate)
 
 project <- "ubels26_haircycle"
 input_folder <- "/mnt/d/scrna_datasets/ubels26_scrna_dataset"
-preprocess_output_folder <- paste0("./preprocessing/")
+output_folder <- "./"
 scrna_data <- list.files(input_folder, recursive = FALSE, include.dirs = FALSE, pattern = ".h5")
 variables <- c("anagen", "catagen", "telogen")
 
@@ -30,13 +30,14 @@ variables <- c("anagen", "catagen", "telogen")
 #########################
 
 # Please note that for GPU support you need to manually change
-# parameters in the setup_py_env() function found in helper_function.R
-# Due to this being highly user dependent, questions regarding setting up
-# appropriate pytorch compatibility will not be supported.
-# CellBender can run without GPU support but this will take a very long time.
+# parameters in setup_py_env.R Due to this being highly user 
+# dependent, questions regarding setting up appropriate pytorch
+# compatibility will not be supported. CellBender can run 
+# without GPU support but this will take a very long time.
 
 source("./helper_functions.R")
 source("./setup_py_env.R")
+source("./ambient_rna_removal.R")
 
 py_location <- "/home/uvictor/miniconda3/bin/conda"
 conda_info_env <- setup_py_env(project, py_location)
@@ -46,38 +47,7 @@ cellbender <- reticulate::import("cellbender")
 # 2. RUN CELLBENDER - AMBIENT RNA REMOVAL
 #########################################
 
-for (dataset in scrna_data) {
-  
-  # Construct paths
-  cellbender_input_path <- file.path(input_folder, dataset)
-  dataset_base <- sub("\\.h5$", "", dataset)
-  
-  # Create output directory
-  cellbender_output_dir <- file.path(preprocess_output_folder, paste0(dataset_base, "_cellbender_results"))
-  dir.create(cellbender_output_dir, recursive = TRUE, showWarnings = FALSE)
-  
-  # Output file inside that directory
-  output_name <- paste0(dataset_base, "_postcellbender.h5")
-  cellbender_output_path <- file.path(cellbender_output_dir, output_name)
-  
-  # Build CellBender command
-  cmd <- sprintf(
-    "%s remove-background --input %s --output %s --cuda",
-    conda_info_env$cellbender_bin,
-    shQuote(cellbender_input_path),
-    shQuote(cellbender_output_path)
-  )
-
-  # Run CellBender
-  message("Processing: ", dataset)
-  exit_code <- system(cmd)
-  
-  if (exit_code != 0) {
-    warning("CellBender failed for: ", dataset)
-  } else {
-    message("Completed: ", output_name)
-  }
-}
+remove_ambient_rna(input_folder = input_folder, cellbender_learning_rate = 0.00005)
 
 ################################
 # 3. DATA LOADING AND INITIAL QC

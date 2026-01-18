@@ -1,0 +1,43 @@
+cellbender:remove-background: Command:
+cellbender remove-background --input /mnt/d/scrna_datasets/ubels26_scrna_dataset/raw_feature_bc_ana_matrix.h5 --output .//preprocessing//raw_feature_bc_ana_matrix_cellbender_results/raw_feature_bc_ana_matrix_postcellbender.h5 --cuda --epochs 150 --learning-rate 0.000050
+cellbender:remove-background: CellBender 0.3.2
+cellbender:remove-background: (Workflow hash 88073c4ba2)
+cellbender:remove-background: 2026-01-18 02:50:14
+cellbender:remove-background: Running remove-background
+cellbender:remove-background: Loading data from /mnt/d/scrna_datasets/ubels26_scrna_dataset/raw_feature_bc_ana_matrix.h5
+cellbender:remove-background: CellRanger v3 format
+cellbender:remove-background: Features in dataset: 38606 Gene Expression
+cellbender:remove-background: Trimming features for inference.
+cellbender:remove-background: 34093 features have nonzero counts.
+cellbender:remove-background: Prior on counts for cells is 3556
+cellbender:remove-background: Prior on counts for empty droplets is 72
+cellbender:remove-background: Excluding 9687 features that are estimated to have <= 0.1 background counts in cells.
+cellbender:remove-background: Including 24406 features in the analysis.
+cellbender:remove-background: Trimming barcodes for inference.
+cellbender:remove-background: Excluding barcodes with counts below 36
+cellbender:remove-background: Using 8647 probable cell barcodes, plus an additional 32654 barcodes, and 118285 empty droplets.
+cellbender:remove-background: Largest surely-empty droplet has 160 UMI counts.
+cellbender:remove-background: Attempting to unpack tarball "ckpt.tar.gz" to /tmp/tmpxvqntxj4
+cellbender:remove-background: No saved checkpoint.
+cellbender:remove-background: No checkpoint loaded.
+cellbender:remove-background: Running inference...
+cellbender:remove-background: [epoch 001]  average training loss: 5627.7298
+cellbender:remove-background: [epoch 002]  average training loss: 4598.8719  (19.7 seconds per epoch)
+cellbender:remove-background: Will checkpoint every 22 epochs
+cellbender:remove-background: [epoch 003]  average training loss: 3987.7557
+cellbender:remove-background: [epoch 004]  average training loss: 3512.4873
+cellbender:remove-background: [epoch 005]  average training loss: 3222.7308
+cellbender:remove-background: [epoch 005] average test loss: 3196.2487
+cellbender:remove-background: [epoch 006]  average training loss: 3128.1550
+cellbender:remove-background: [epoch 007]  average training loss: 3089.2690
+cellbender:remove-background: [epoch 008]  average training loss: 3062.9715
+cellbender:remove-background: [epoch 009]  average training loss: 3055.9637
+cellbender:remove-background: [epoch 010]  average training loss: 3097.7747
+cellbender:remove-background: [epoch 010] average test loss: 3126.6648
+cellbender:remove-background: [epoch 011]  average training loss: 3104.4006
+cellbender:remove-background: [epoch 012]  average training loss: 3059.9362
+cellbender:remove-background: [epoch 013]  average training loss: 3032.4892
+cellbender:remove-background: [epoch 014]  average training loss: 3033.4527
+cellbender:remove-background: [epoch 015]  average training loss: 3012.2414
+cellbender:remove-background: [epoch 015] average test loss: 3056.3494
+cellbender:remove-background: [epoch 016]  average training loss: 3016.0087

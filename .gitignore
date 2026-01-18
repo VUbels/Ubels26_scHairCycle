@@ -3,3 +3,7 @@
 .RData
 .Ruserdata
 .pub
+
+*.csv
+*.h5
+*.rds

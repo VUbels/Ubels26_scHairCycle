@@ -1,5 +1,13 @@
+###############################################################
+# SETUP CONDA PY ENVIRONMENT WITH APPROPRIATE GPU COMPATABILITY
+###############################################################
+
+
 setup_py_env <- function(py_env_name, py_location) {
   
+  # PYTORCH_ROCM_ARCH type necessary from compatability matrix if using AMD ROCm
+  # Check https://rocm.docs.amd.com/projects/install-on-linux/en/latest/reference/system-requirements.html
+
   Sys.setenv(PYTORCH_ROCM_ARCH = "gfx1201")
   options(reticulate.conda_binary = py_location)
   
@@ -10,6 +18,7 @@ setup_py_env <- function(py_env_name, py_location) {
     message("Creating new environment: ", py_env_name)
     
     # Create env
+    
     reticulate::conda_create(
       envname = py_env_name,
       python_version = "3.12",
@@ -17,6 +26,7 @@ setup_py_env <- function(py_env_name, py_location) {
     )
     
     # Activate
+    
     reticulate::use_condaenv(py_env_name, required = TRUE)
     
     # Get pip path for this environment
@@ -24,11 +34,14 @@ setup_py_env <- function(py_env_name, py_location) {
     env_info <- conda_envs[conda_envs$name == py_env_name, ]
     pip_path <- file.path(dirname(dirname(env_info$python)), "bin", "pip")
     
-    # Install PyTorch ROCm using index URL
+    # Install PyTorch ROCm using index URL, change for CUDA/ROCm (Nvidia/AMD)
+    
     message("Installing PyTorch ROCm...")
     system(paste(pip_path, "install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.4"))
     
-    # Remove bundled HSA runtime
+    # Remove bundled HSA runtime specific for WSL2/Linux/ROCm to ensure GPU can be found
+    # For more info see: https://github.com/ROCm/ROCm/issues/4682\
+    
     message("Applying HSA runtime fix...")
     torch_lib_path <- reticulate::py_capture_output({
       reticulate::py_run_string("import torch; import os; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))")
@@ -36,7 +49,8 @@ setup_py_env <- function(py_env_name, py_location) {
     torch_lib_path <- trimws(torch_lib_path)
     system(paste("rm -f", file.path(torch_lib_path, "libhsa-runtime64.so*")))
     
-    # Install CellBender
+    # Install CellBender with custom pull 420 to make python 3.12/numpy 2.0+ compatible
+    
     message("Installing CellBender...")
     system(paste(pip_path, "install git+https://github.com/broadinstitute/CellBender.git@refs/pull/420/head"))
     
@@ -46,6 +60,7 @@ setup_py_env <- function(py_env_name, py_location) {
     message("#############################\n")
     
     # Auto-restart if in RStudio, otherwise prompt
+    
     if (Sys.getenv("RSTUDIO") == "1") {
       message("Restarting RStudio session in 3 seconds...")
       Sys.sleep(3)
@@ -58,6 +73,7 @@ setup_py_env <- function(py_env_name, py_location) {
     
   } else {
     # Environment exists - verify it works
+    
     reticulate::use_condaenv(py_env_name, required = TRUE)
     torch <- reticulate::import("torch")
     gpu_available <- torch$cuda$is_available()
@@ -72,7 +88,6 @@ setup_py_env <- function(py_env_name, py_location) {
       warning("Existing env - GPU not detected!")
     }
     
-    # REPLACE the old return(TRUE) with this:
     return(list(
       gpu_ok = gpu_available,
       cellbender_bin = cellbender_bin
