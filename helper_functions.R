@@ -91,7 +91,7 @@ filter_by_qc <- function(input_folder, project_names, min_feature = NULL, max_fe
     
     obj <- Seurat::CreateSeuratObject(
       counts = counts,
-      project = as.character(project_names[i])  # Force character
+      project = as.character(project_names[i])
     )
     
     obj$orig.ident <- project_names[i]
@@ -108,9 +108,12 @@ filter_by_qc <- function(input_folder, project_names, min_feature = NULL, max_fe
         percent.mt < max_percent_mt
     )
     
+    # Rename cells BEFORE adding to list, using project name
+    obj <- RenameCells(obj, add.cell.id = project_names[i])
+    
     object.list[[i]] <- obj
     
-    cat("Remaining cells after QC for", unique(obj$orig.ident), "is", ncol(obj), "cells\n\n")
+    cat("Remaining cells after QC for", project_names[i], "is", ncol(obj), "cells\n\n")
   }
   
   return(object.list)
@@ -120,16 +123,15 @@ filter_by_qc <- function(input_folder, project_names, min_feature = NULL, max_fe
 # INTEGRATE SCRNA DATA USING SCANORAMA (PYTHON SCRIPT)
 ###############################################################
 
-###############################################################
-# INTEGRATE SCRNA DATA USING SCANORAMA (PYTHON SCRIPT)
-###############################################################
-
-scrna_integrate <- function(object.list, output_folder = "./", dataset_names, python_script_path = "./integrate_scanorama.py") {
+scrna_integrate <- function(object.list, output_folder = "./", dataset_names, 
+                            python_script_path = "./integrate_scanorama.py",
+                            python_path = NULL) { 
   
   cat("\n##################################\n")
   cat("Normalizing and saving filtered objects...\n")
   cat("##################################\n")
   
+  sc <- reticulate::import("scanpy")
   temp_dir <- file.path(output_folder, "preprocessing", "filtered_for_integration")
   dir.create(temp_dir, recursive = TRUE, showWarnings = FALSE)
   
@@ -142,7 +144,7 @@ scrna_integrate <- function(object.list, output_folder = "./", dataset_names, py
     data_matrix <- LayerData(obj, assay = "RNA", layer = "data")
     
     h5_path <- file.path(temp_dir, paste0(dataset_names[i], "_qc_filtered.h5"))
-    DropletUtils::write10xCounts(path = h5_path, x = data_matrix, version = "3")
+    DropletUtils::write10xCounts(path = h5_path, x = data_matrix, version = "3", overwrite = TRUE)
     
     cat("  Saved:", ncol(obj), "cells x", nrow(obj), "genes\n")
   }
@@ -151,9 +153,17 @@ scrna_integrate <- function(object.list, output_folder = "./", dataset_names, py
   cat("Running Scanorama via Python...\n")
   cat("##################################\n")
   
-  # Call the existing Python script
+  # Use provided python_path or fall back to system default
+  if (is.null(python_path)) {
+    python_cmd <- "python"
+  } else {
+    python_cmd <- python_path
+  }
+  
+  # Call the script with explicit Python interpreter
   cmd <- sprintf(
-    "python %s %s %s %s",
+    "%s %s %s %s %s",
+    shQuote(python_cmd),
     shQuote(python_script_path),
     shQuote(temp_dir),
     shQuote(file.path(output_folder, "preprocessing")),
@@ -167,12 +177,10 @@ scrna_integrate <- function(object.list, output_folder = "./", dataset_names, py
     stop("Python script failed with exit code ", exit_code)
   }
   
-  # Read integrated h5ad using scanpy via reticulate
   cat("\n##################################\n")
   cat("Loading integrated data into R...\n")
   cat("##################################\n")
   
-  sc <- reticulate::import("scanpy")
   h5ad_path <- file.path(output_folder, "preprocessing", "integrated_scanorama.h5ad")
   adata <- sc$read_h5ad(h5ad_path)
   
@@ -183,18 +191,23 @@ scrna_integrate <- function(object.list, output_folder = "./", dataset_names, py
   }
   counts <- Matrix::t(counts)
   
+  #Set row and column names explicitly
+  rownames(counts) <- rownames(adata)  
+  colnames(counts) <- adata$obs_names$to_list() 
+  
   # Get metadata
   metadata <- reticulate::py_to_r(adata$obs)
-  
-  # Get embeddings
-  umap_coords <- reticulate::py_to_r(adata$obsm$get("X_umap"))
-  scanorama_coords <- reticulate::py_to_r(adata$obsm$get("X_scanorama"))
+  rownames(metadata) <- adata$obs_names$to_list() 
   
   # Create Seurat object
   integrated_seurat <- CreateSeuratObject(
     counts = counts,
     meta.data = metadata
   )
+  
+  # Get embeddings from adata
+  umap_coords <- reticulate::py_to_r(adata$obsm$get("X_umap"))
+  scanorama_coords <- reticulate::py_to_r(adata$obsm$get("X_scanorama"))
   
   # Add embeddings
   colnames(umap_coords) <- paste0("UMAP_", 1:2)

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import scanpy as sc
 import scanorama
 import sys
@@ -24,10 +23,6 @@ for i, h5_file in enumerate(h5_files):
     adata = sc.read_10x_h5(str(h5_file))
     adata.obs['dataset'] = dataset_names[i]
     adata.obs['orig.ident'] = dataset_names[i]
-    
-    # Make cell names unique by adding dataset prefix
-    adata.obs_names = [f'{dataset_names[i]}_{name}' for name in adata.obs_names]
-    
     adatas.append(adata)
     print(f'  {dataset_names[i]}: {adata.n_obs} cells x {adata.n_vars} genes')
 

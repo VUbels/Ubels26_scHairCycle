@@ -80,6 +80,7 @@ setup_py_env <- function(py_env_name, py_location) {
     
     conda_envs <- reticulate::conda_list()
     env_info <- conda_envs[conda_envs$name == py_env_name, ]
+    python_path <- env_info$python
     cellbender_bin <- file.path(dirname(dirname(env_info$python)), "bin", "cellbender")
     
     if (gpu_available) {
@@ -90,7 +91,8 @@ setup_py_env <- function(py_env_name, py_location) {
     
     return(list(
       gpu_ok = gpu_available,
-      cellbender_bin = cellbender_bin
+      cellbender_bin = cellbender_bin,
+      python_path = python_path 
     ))
   }
 }

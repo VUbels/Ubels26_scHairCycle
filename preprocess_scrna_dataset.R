@@ -63,7 +63,7 @@ make_seurat_compatible(output_folder = main_folder)
 show_qc_metrics(input_folder = main_folder)
 
 #################################################################
-# INITIAL QC FILTERING
+# INITIAL QC FILTERING AND SETTING UNIQUE BARCODES PER SAMPLE
 #################################################################
 
 object.list <- filter_by_qc(
@@ -94,7 +94,8 @@ integrated_obj <- scrna_integrate(
   object.list = object.list,
   output_folder = main_folder,
   dataset_names = dataset_names,
-  python_script_path = "./integrate_scanorama.py"
+  python_script_path = "./integrate_scanorama.py",
+  python_path = conda_info_env[["python_path"]]
 )
 
 saveRDS(integrated_obj, file = paste0(main_folder, "post_filter_integrated_objects.RDS"))
