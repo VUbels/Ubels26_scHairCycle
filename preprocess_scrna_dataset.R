@@ -41,10 +41,10 @@ dataset_names <- c("Anagen", "Catagen", "Telogen")
 # compatibility will not be supported. CellBender can run 
 # without GPU support but this will take a very long time.
 
-source("./helper_functions.R")
-source("./setup_py_env.R")
-source("./ambient_rna_removal.R")
-source("./doublet_removal.R")
+source("./scripts/helper_functions.R")
+source("./scripts/setup_py_env.R")
+source("./scripts/ambient_rna_removal.R")
+source("./scripts/doublet_removal.R")
 
 py_location <- "/home/uvictor/miniconda3/bin/conda"
 conda_info_env <- setup_py_env(project, py_location)
@@ -94,7 +94,7 @@ integrated_obj <- scrna_integrate(
   object.list = object.list,
   output_folder = main_folder,
   dataset_names = dataset_names,
-  python_script_path = "./integrate_scanorama.py",
+  python_script_path = "./scripts/integrate_scanorama.py",
   python_path = conda_info_env[["python_path"]]
 )
 
