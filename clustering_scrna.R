@@ -14,8 +14,9 @@
 
 library(Seurat)
 library(SeuratDisk)
+
+library(Nebulosa)
 library(CDI)
-library(Rmagic)
 library(reticulate)
 
 #################################################################
@@ -52,16 +53,7 @@ conda_info_env <- setup_py_env(project, py_location)
 # RUNNING BROAD MARKER GENES FOR INITIAL CLUSTERIZATION
 #################################################################
 
-# Easy visualization tool to get a better overview of gene expression particularly
+# Easy visualization through Nebulosa to get a better overview of gene expression particularly
 # for when low cell count has high gene expression in a particular cluster
-#
-# k parameter controls smoothing
-# t parameter controls diffusion
 
-FeaturePlot(obj, features = "MLANA")
-
-plot_magic_genes(obj, 
-                 genes = gene_list,
-                 output_folder = "./marker_genes",
-                 knn = 10,
-                 t = 3)
+plot_marker_genes(obj, genes = gene_list, pt_size = 0.4)

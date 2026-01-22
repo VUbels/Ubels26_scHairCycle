@@ -265,178 +265,63 @@ scrna_integrate <- function(object.list, output_folder = "./", dataset_names,
   
   return(integrated_seurat)
 }
-###################################################
-# RUN MAGIC ON GENES FOR VISUALIZATION - FIX FOR S5
-###################################################
+######################################################
+# RUN NEBULOSA ON GENES FOR VISUALIZATION - FIX FOR S5
+######################################################
 
-plot_magic_genes <- function(seurat_obj, 
-                             genes,
-                             output_folder = "./marker_genes",
-                             knn = 10,
-                             t = 3,
-                             reduction = "umap",
-                             pt.size = 0.5,
-                             n_pca = 50) {
+plot_marker_genes <- function(obj, genes, reduction = "umap", colour_scale = "inferno", output_dir = "./marker_genes", pt_size = 0.3) {
   
-  library(reticulate)
-  library(dplyr)
+  library(Nebulosa)
   library(ggplot2)
-  library(Matrix)
+  library(viridis)
   
-  magic <- import("magic")
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   
-  dir.create(output_folder, showWarnings = FALSE)
+  available_genes <- rownames(obj)
   
-  # Join layers for Seurat v5
-  seurat_obj <- JoinLayers(seurat_obj)
-  
-  # Get normalized expression (cells x genes)
-  expr <- t(as(LayerData(seurat_obj, layer = "data"), "sparseMatrix"))
-  expr <- expr[, Matrix::colSums(expr) > 0]
-  
-  cat(sprintf("Matrix: %d cells x %d genes\n", nrow(expr), ncol(expr)))
-  
-  # Use Seurat's pre-computed PCA instead of letting MAGIC recompute
-  pca_embed <- Embeddings(seurat_obj, reduction = "pca")[, 1:n_pca]
-  
-  cat(sprintf("Using pre-computed PCA (%d components)\n", ncol(pca_embed)))
-  cat(sprintf("Running MAGIC on %d genes...\n", length(genes)))
-  
-  # Initialize MAGIC with n_pca=0 to skip internal PCA computation
-  # Pass knn_dist="precomputed_affinity" won't work, but we can use solver='approximate'
-  magic_op <- magic$MAGIC(
-    knn = as.integer(knn), 
-    t = as.integer(t),
-    n_pca = as.integer(n_pca),  # Still uses PCA but on smaller input
-    solver = "approximate",
-    n_jobs = 1L
-  )
-  
-  # Fit on PCA space, transform expression for selected genes only
-  magic_op$fit(X = pca_embed)
-  
-  # Get the graph and apply to expression data for selected genes
-  expr_dense <- as.matrix(expr[, genes, drop = FALSE])
-  expr_smooth <- magic_op$transform(X = expr_dense, genes = "all_genes")
-  expr_smooth <- as.matrix(expr_smooth)
-  colnames(expr_smooth) <- genes
-  
-  # Get UMAP coordinates
-  umap_coords <- Embeddings(seurat_obj, reduction = reduction)
+  # Create custom color scale: grey at 0, then inferno
+  inferno_cols <- viridis::inferno(100)
+  custom_cols <- c("grey20", inferno_cols[1:100])
   
   for (gene in genes) {
     
-    # Plot
-    pdf(
-      file.path(output_folder, paste0(gene, "_marker.pdf")),
-      width = 8,
-      height = 6
-    )
-    
-    if (!gene %in% colnames(expr_smooth)) {
-      message(sprintf("Warning: %s not found, skipping", gene))
+    if (!gene %in% available_genes) {
+      message(sprintf("Gene not found: %s", gene))
       next
     }
     
-    plot_df <- data.frame(
-      UMAP_1 = umap_coords[, 1],
-      UMAP_2 = umap_coords[, 2],
-      Expression = expr_smooth[, gene]
-    )
-    
-    upper_lim <- quantile(plot_df$Expression, probs = 0.95)
-    plot_df$Expression[plot_df$Expression >= upper_lim] <- upper_lim
-    
-    p <- ggplot(plot_df, aes(x = UMAP_1, y = UMAP_2, color = Expression)) +
-      geom_point(size = pt.size) +
-      scale_color_viridis_c() +
-      ggtitle(paste0(gene, " (MAGIC smoothed)")) +
-      theme_minimal() +
-      theme(plot.title = element_text(size = 14, face = "bold"))
-    
-    print(p)
-    
-    dev.off()
-  }
-
-  cat(sprintf("Plots saved to: %s\n", output_folder))
-}
-
-###################################################
-# CUSTOM PLOTTING FUNCTION - P-VALUES INSTEAD OF FDR
-###################################################
-
-plotNhoodGraphDA_pval <- function(x, milo_res, alpha = 0.1, res_column = "logFC", 
-                                  use_pvalue = TRUE, layout = "UMAP", ...) {
-  
-  # Check if neighborhood graph exists
-  if(is.null(nhoodGraph(x)) || length(igraph::E(nhoodGraph(x))) == 0){
-    stop("Not a valid Milo object - neighbourhood graph is missing. Please run buildNhoodGraph() first.")
-  }
-  
-  # Check if layout is valid
-  if (is.character(layout)) {
-    if (!layout %in% names(reducedDims(x))) {
-      stop(layout, " is not in reducedDim(x) - choose a different layout")
-    }
-  }
-  
-  ## Add milo results to colData
-  signif_res <- milo_res
-  
-  # Use PValue instead of SpatialFDR if specified
-  if(use_pvalue) {
-    signif_res$test_stat <- signif_res$PValue
-  } else {
-    signif_res$test_stat <- signif_res$SpatialFDR
-  }
-  
-  # Handle NAs
-  signif_res$test_stat[is.na(signif_res$test_stat)] <- 1
-  
-  # Set logFC to 0 for non-significant neighborhoods
-  signif_res[signif_res$test_stat > alpha, res_column] <- 0
-  
-  # Add results to colData
-  colData(x)[res_column] <- NA
-  
-  # Handle nhood subsetting
-  if(any(names(list(...)) %in% c("subset.nhoods"))){
-    subset.nhoods <- list(...)$subset.nhoods
-    sub.indices <- nhoodIndex(x)[subset.nhoods]
-    colData(x)[unlist(sub.indices[signif_res$Nhood]), res_column] <- signif_res[,res_column]
-  } else{
-    colData(x)[unlist(nhoodIndex(x)[signif_res$Nhood]), res_column] <- signif_res[,res_column]
-  }
-  
-  # Check for res_column in graph vertex attributes
-  g_atts <- names(igraph::vertex_attr(nhoodGraph(x)))
-  if(isFALSE(res_column %in% g_atts)){
-    message("Adding nhood effect sizes to neighbourhood graph attributes")
-    
-    if(any(names(list(...)) %in% c("subset.nhoods"))){
-      nh.v <- igraph::V(nhoodGraph(x))
-      drop.v <- setdiff(nh.v, sub.indices)
-      nhgraph <- nhoodGraph(x)
-      nhgraph <- igraph::subgraph(nhgraph, sub.indices)
-      nhgraph <- igraph::set_vertex_attr(nhgraph,
-                                         name = res_column, value = signif_res[, res_column])
-      nhoodGraph(x) <- nhgraph
-    } else{
-      nhoodGraph(x) <- igraph::set_vertex_attr(nhoodGraph(x), 
-                                               name = res_column, 
-                                               value = signif_res[, res_column])
-    }
-  }
-  
-  ## Plot logFC - pass layout explicitly
-  plotNhoodGraph(x, colour_by = res_column, layout = layout, is.da = TRUE, ...) +
-    theme(axis.title = element_blank(),
-          axis.text = element_blank(),
+    tryCatch({
+      
+      p <- plot_density(obj, gene, reduction = reduction, size = pt_size) + 
+        scale_color_gradientn(colors = custom_cols) +
+        ggtitle(gene) +
+        theme(
           axis.ticks = element_blank(),
-          legend.text = element_text(size = 12),
-          legend.title = element_text(size = 14))
+          axis.text.x = element_blank(),
+          axis.text.y = element_blank(),
+          axis.text = element_blank(),
+          axis.title = element_text(size = 14),
+          plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+          legend.title = element_text(size = 12),
+          legend.text = element_text(size = 10)
+        )
+      
+      ggsave(
+        filename = file.path(output_dir, paste0(gene, "_density.png")),
+        plot = p,
+        width = 4,
+        height = 4,
+        dpi = 300
+      )
+      
+      message(sprintf("Saved: %s", gene))
+      
+    }, error = function(e) {
+      message(sprintf("Failed to plot %s: %s", gene, e$message))
+    })
+  }
 }
+
 
 ###################################################
 # CELL EXTRACTION FUNCTION
@@ -752,4 +637,157 @@ plot_spatial_overlap_adaptive <- function(spatial_obj, gene1, gene2,
   )
   
   return(result)
+}
+
+
+##################################################
+# OLD FUNCITONS NO LONGER USED KEPT FOR POSTERITY
+##################################################
+
+plot_magic_genes <- function(seurat_obj, 
+                             genes,
+                             output_folder = "./marker_genes",
+                             knn = 10,
+                             t = 3,
+                             decay = 40,
+                             reduction = "umap",
+                             pt.size = 0.5,
+                             n_pca = 50) {
+  
+  library(Matrix)
+  library(FNN)
+  library(ggplot2)
+  library(Seurat)
+  
+  dir.create(output_folder, showWarnings = FALSE, recursive = TRUE)
+  
+  seurat_obj <- JoinLayers(seurat_obj)
+  
+  # Run PCA if not present
+  if (!"pca" %in% Reductions(seurat_obj)) {
+    message("PCA not found, running PCA...")
+    seurat_obj <- FindVariableFeatures(seurat_obj, verbose = FALSE)
+    seurat_obj <- ScaleData(seurat_obj, verbose = FALSE)
+    seurat_obj <- RunPCA(seurat_obj, npcs = n_pca, verbose = FALSE)
+  }
+  
+  pca <- Embeddings(seurat_obj, "pca")
+  if (ncol(pca) < n_pca) {
+    n_pca <- ncol(pca)
+  }
+  pca <- pca[, 1:n_pca]
+  
+  # Get expression
+  expr <- t(GetAssayData(seurat_obj, layer = "data"))
+  expr <- expr[, colSums(expr) > 0]
+  
+  valid_genes <- genes[genes %in% colnames(expr)]
+  if (length(valid_genes) < length(genes)) {
+    missing <- setdiff(genes, valid_genes)
+    message(sprintf("Warning: %d genes not found: %s", 
+                    length(missing), paste(missing, collapse = ", ")))
+  }
+  
+  if (length(valid_genes) == 0) {
+    stop("No valid genes found in expression matrix")
+  }
+  
+  n_cells <- nrow(pca)
+  cat(sprintf("Cells: %d, PCs: %d, Target genes: %d\n", 
+              n_cells, n_pca, length(valid_genes)))
+  
+  # Build kNN graph (k+1 to include self)
+  cat("Building kNN graph...\n")
+  nn <- get.knn(pca, k = knn)
+  
+  # Adaptive bandwidth: distance to kth neighbor
+  bandwidth <- nn$nn.dist[, knn]
+  # Prevent division by zero
+  bandwidth[bandwidth == 0] <- min(bandwidth[bandwidth > 0])
+  
+  cat("Computing affinity matrix...\n")
+  
+  # Build sparse affinity matrix with MAGIC's alpha-decay kernel
+  # Include self-connections (diagonal = 1)
+  i_idx <- c(1:n_cells, rep(1:n_cells, each = knn))
+  j_idx <- c(1:n_cells, as.vector(nn$nn.index))
+  
+  # Self-affinities = 1, neighbor affinities use decay kernel
+  dists <- as.vector(nn$nn.dist)
+  bw_i <- bandwidth[rep(1:n_cells, each = knn)]
+  
+  # MAGIC kernel: exp(-(d/sigma)^decay) but decay=40 is essentially binary
+  # Use simpler Gaussian: exp(-d^2 / sigma^2)
+  neighbor_affinities <- exp(-dists^2 / bw_i^2)
+  
+  all_affinities <- c(rep(1, n_cells), neighbor_affinities)
+  
+  A <- sparseMatrix(i = i_idx, j = j_idx, x = all_affinities, 
+                    dims = c(n_cells, n_cells))
+  
+  # Symmetrize: use max to preserve connections
+  A <- pmax(A, t(A))
+  
+  # Row-normalize to Markov matrix
+  cat("Building Markov matrix...\n")
+  row_sums <- rowSums(A)
+  D_inv <- Diagonal(x = 1 / row_sums)
+  M <- D_inv %*% A
+  
+  # Verify row sums = 1
+  cat(sprintf("Markov matrix row sums: min=%.4f, max=%.4f\n", 
+              min(rowSums(M)), max(rowSums(M))))
+  
+  # Power the matrix
+  cat(sprintf("Diffusing (t=%d)...\n", t))
+  M_t <- M
+  for (i in seq_len(t - 1)) {
+    M_t <- M_t %*% M
+  }
+  
+  # Get expression subset
+  expr_subset <- as.matrix(expr[, valid_genes, drop = FALSE])
+  
+  cat(sprintf("Expression range before: min=%.4f, max=%.4f, mean=%.4f\n",
+              min(expr_subset), max(expr_subset), mean(expr_subset)))
+  
+  # Apply diffusion
+  expr_smooth <- as.matrix(M_t %*% expr_subset)
+  colnames(expr_smooth) <- valid_genes
+  
+  cat(sprintf("Expression range after:  min=%.4f, max=%.4f, mean=%.4f\n",
+              min(expr_smooth), max(expr_smooth), mean(expr_smooth)))
+  
+  # Get UMAP coordinates
+  umap_coords <- Embeddings(seurat_obj, reduction = reduction)
+  
+  # Plot each gene
+  for (gene in valid_genes) {
+    
+    plot_df <- data.frame(
+      UMAP_1 = umap_coords[, 1],
+      UMAP_2 = umap_coords[, 2],
+      Expression = expr_smooth[, gene]
+    )
+    
+    upper_lim <- quantile(plot_df$Expression, probs = 0.95)
+    plot_df$Expression[plot_df$Expression >= upper_lim] <- upper_lim
+    
+    p <- ggplot(plot_df, aes(x = UMAP_1, y = UMAP_2, color = Expression)) +
+      geom_point(size = pt.size) +
+      scale_color_viridis_c() +
+      ggtitle(paste0(gene, " (MAGIC smoothed)")) +
+      theme_minimal() +
+      theme(plot.title = element_text(size = 14, face = "bold"))
+    
+    pdf(
+      file.path(output_folder, paste0(gene, "_marker.pdf")),
+      width = 8,
+      height = 6
+    )
+    print(p)
+    dev.off()
+  }
+  
+  cat(sprintf("Plots saved to: %s\n", output_folder))
 }
