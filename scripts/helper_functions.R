@@ -269,20 +269,81 @@ scrna_integrate <- function(object.list, output_folder = "./", dataset_names,
 # RUN NEBULOSA ON GENES FOR VISUALIZATION - FIX FOR S5
 ######################################################
 
-plot_marker_genes <- function(obj, genes, reduction = "umap", colour_scale = "inferno", output_dir = "./marker_genes", pt_size = 0.3) {
+plot_marker_genes <- function(obj, 
+                                  genes, 
+                                  cluster_col = "seurat_clusters",
+                                  reduction = "umap", 
+                                  output_dir = "./marker_genes", 
+                                  pt_size = 0.3,
+                                  outline_size = 0.6,
+                                  concavity = 2,
+                                  show_labels = FALSE,
+                                  eps = 1.5,
+                                  min_pts = 5,
+                                  outlier_percentile = 0.99) {
   
   library(Nebulosa)
   library(ggplot2)
   library(viridis)
+  library(dbscan)
+  library(dplyr)
+  library(concaveman)
+  library(shadowtext)
   
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   
   available_genes <- rownames(obj)
   
-  # Create custom color scale: grey at 0, then inferno
+  # Custom color scale for density
   inferno_cols <- viridis::inferno(100)
-  custom_cols <- c("grey20", inferno_cols[1:100])
+  custom_cols <- c("grey85", inferno_cols[1:100])
   
+  # Get UMAP coordinates and cluster labels
+  umap_coords <- as.data.frame(Embeddings(obj, reduction = reduction))
+  colnames(umap_coords) <- c("x", "y")
+  umap_coords$cluster <- as.factor(obj@meta.data[[cluster_col]])
+  
+  # Compute boundaries for each cluster
+  message("Computing cluster boundaries...")
+  boundary_list <- list()
+  
+  for (clust in levels(umap_coords$cluster)) {
+    
+    clust_data <- umap_coords %>% filter(cluster == clust)
+    
+    # Remove outliers based on distance from cluster centroid
+    centroid_x <- median(clust_data$x)
+    centroid_y <- median(clust_data$y)
+    clust_data$dist <- sqrt((clust_data$x - centroid_x)^2 + (clust_data$y - centroid_y)^2)
+    
+    dist_threshold <- quantile(clust_data$dist, outlier_percentile)
+    clust_data <- clust_data %>% filter(dist <= dist_threshold)
+    
+    clust_matrix <- as.matrix(clust_data[, c("x", "y")])
+    
+    # Use DBSCAN to find spatially contiguous regions
+    db <- dbscan(clust_matrix, eps = eps, minPts = min_pts)
+    
+    for (sub_clust in unique(db$cluster)) {
+      if (sub_clust == 0) next
+      
+      sub_pts <- clust_matrix[db$cluster == sub_clust, , drop = FALSE]
+      
+      if (nrow(sub_pts) < 3) next
+      
+      hull <- concaveman(sub_pts, concavity = concavity)
+      
+      boundary_list[[length(boundary_list) + 1]] <- data.frame(
+        x = hull[, 1],
+        y = hull[, 2],
+        cluster = clust
+      )
+    }
+  }
+  
+  boundaries <- bind_rows(boundary_list, .id = "group_id")
+  
+  # Plot each gene
   for (gene in genes) {
     
     if (!gene %in% available_genes) {
@@ -292,25 +353,55 @@ plot_marker_genes <- function(obj, genes, reduction = "umap", colour_scale = "in
     
     tryCatch({
       
-      p <- plot_density(obj, gene, reduction = reduction, size = pt_size) + 
+      p <- plot_density(obj, gene, reduction = reduction, size = pt_size) +
         scale_color_gradientn(colors = custom_cols) +
         ggtitle(gene) +
         theme(
           axis.ticks = element_blank(),
           axis.text.x = element_blank(),
           axis.text.y = element_blank(),
-          axis.text = element_blank(),
           axis.title = element_text(size = 14),
           plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
           legend.title = element_text(size = 12),
           legend.text = element_text(size = 10)
         )
       
+      # Add boundaries as dashed white lines
+      for (gid in unique(boundaries$group_id)) {
+        b <- boundaries %>% filter(group_id == gid)
+        
+        p <- p + 
+          geom_path(
+            data = b,
+            aes(x = x, y = y),
+            color = "white",
+            linewidth = outline_size,
+            linetype = "dashed",
+            inherit.aes = FALSE
+          )
+      }
+      
+      if (show_labels) {
+        label_coords <- umap_coords %>%
+          group_by(cluster) %>%
+          summarize(x = median(x), y = median(y), .groups = "drop")
+        
+        p <- p + 
+          geom_shadowtext(
+            data = label_coords,
+            aes(x = x, y = y, label = cluster),
+            color = "white",
+            fontface = "bold",
+            size = 4,
+            inherit.aes = FALSE
+          )
+      }
+      
       ggsave(
         filename = file.path(output_dir, paste0(gene, "_density.png")),
         plot = p,
-        width = 4,
-        height = 4,
+        width = 8,
+        height = 6,
         dpi = 300
       )
       
@@ -321,7 +412,6 @@ plot_marker_genes <- function(obj, genes, reduction = "umap", colour_scale = "in
     })
   }
 }
-
 
 ###################################################
 # CELL EXTRACTION FUNCTION
