@@ -26,14 +26,7 @@ library(reticulate)
 project <- "ubels26_haircycle"
 main_folder <- "./"
 obj <- readRDS(paste0(main_folder, "post_filter_integrated_objects.RDS"))
-
-gene_list = c("PDGFRA", "FGF7", "VIM", "EDN3", "WNT5A", "KRT1", "KRT10", "KRT6A",
-              "KRT17", "KRT75", "KRT35", "KRT85", "PECAM1", "VWF", "TAGLN", "DSP",
-              "MLANA", "PMEL", "SOX7","SOX9", "SOX18","SERPINA3", "PDZRN3", "FGL2",
-              "CXCL14", "LGR5", "COMP", "CD34", "AQP3", "KRT79", "KRT19", "WNT3",
-              "WNT10A", "WNT10B", "RGS5", "CD3D", "CD69", "TWIST2", "SOX10", "CDH9",
-              "ACTA2", "EGF", "LGR6", "FGF14", "FMN2", "CTNNA2", "GPR183", "CD53",
-              "CD2", "HLA-DQA2", "S100A2", "NES", "RGS5")
+vis_obj <- readRDS(paste0(main_folder, "Spatial_scalp_S2_final.rds"))
 
 #################################################################
 # SETUP PY ENVIRONMENT
@@ -47,8 +40,7 @@ gene_list = c("PDGFRA", "FGF7", "VIM", "EDN3", "WNT5A", "KRT1", "KRT10", "KRT6A"
 
 source("./scripts/helper_functions.R")
 source("./scripts/setup_py_env.R")
-source("./scripts/ambient_rna_removal.R")
-source("./scripts/doublet_removal.R")
+source("./scripts/gene_lists.R")
 
 py_location <- "/home/uvictor/miniconda3/bin/conda"
 conda_info_env <- setup_py_env(project, py_location)
@@ -63,7 +55,7 @@ conda_info_env <- setup_py_env(project, py_location)
 broad_markers <- FindAllMarkers(obj, min.pct = 0.1, logfc.threshold = 0.3)
 
 plot_marker_genes(obj = obj, 
-                              genes = gene_list, 
+                              genes = broad_gene_list, 
                               cluster_col = "seurat_clusters",
                               reduction = "umap", 
                               output_dir = "./marker_genes/broad_markers", 
@@ -80,24 +72,63 @@ plot_marker_genes(obj = obj,
 #################################################################
 
 broad_cluster_identification <- list(
- `0` = "Temporal.Follicle", #PDZRN3/SERPINA3/SOX9/KRT75
- `1` = "Temporal.Follicle", #PDZRN3/SOX9
+ `0` = "Lower.Follicle", #PDZRN3/SERPINA3/SOX9/KRT75
+ `1` = "Lower.Follicle", #PDZRN3/SOX9
  `2` = "Central.Follicle", #WNT5A/KRT19
  `3` = "Central.Follicle", #WNT5A/
  `4` = "Matrix", #KRT35/KRT85/WNT10B
- `5` = "Permanent.Follicle", #KRT1/KRT10/KRT79/AQP3
- `6` = "Permanent.Follicle", #LGR6/SOX7/WNT10A
- `7` = "Permanent.Follicle", #KRT1/KRT10/KRT79/WNT3
+ `5` = "Upper.Follicle", #KRT1/KRT10/KRT79/AQP3
+ `6` = "Upper.Follicle", #LGR6/SOX7/WNT10A
+ `7` = "Upper.Follicle", #KRT1/KRT10/KRT79/WNT3
  `8` = "Endothelial", #PLVAP/PECAM1/VWF/SOX18/VIM
- `9` = "Pericytes", #RGS5 but also EDN3/VIM/CD34
+ `9` = "Fibroblasts", #RGS5 but also EDN3/VIM/CD34
  `10` = "Immune", #CD3D/CD53/CD69
- `11` = "Dermal.Papilla", #FGF7/TWIST2/PDGFRA
+ `11` = "Fibroblasts", #FGF7/TWIST2/PDGFRA
  `12` = "Melanocytes", #PMEL/MLANA/SOX10
- `13` = "Dermal.Sheath", #TALGN/VIM/ACTA2
+ `13` = "Fibroblasts", #TALGN/VIM/ACTA2
  `14` = "Central.Follicle", #EGF/FGF14
- `15` = "Temporal.Follicle", #Likely differentiating cells? #KR17/
+ `15` = "Lower.Follicle", #Likely differentiating cells? #KR17
  `16` = "Neural.Progenitors" #CTNNA2/CDH9
 )
 obj$broad_cluster <- unname(unlist(broad_cluster_identification[as.character(obj$seurat_clusters)]))
-
 visualize_percentage_clusters(seurat_obj = obj, clusters = "broad_cluster", phases = "orig.ident", output_dir = paste0(main_folder, "marker_genes"))
+
+#################################################################
+# SPECIFYING FINE CLUSTER IDENTIFICATION FOR LARGER COHORTS
+#################################################################
+
+subset_obj <- subset(obj, subset = obj$broad_cluster == c("Lower.Follicle", "Central.Follicle"))
+subset_obj <- cluster_subcluster(subset_obj, output_dir = "./marker_genes/")
+Idents(subset_obj) <- "SCT_snn_res.0.5"
+
+subset_cluster_markers <- FindAllMarkers(subset_obj, min.pct = .1, only.pos = TRUE)
+plot_marker_genes(obj = subset_obj, 
+                  genes = unique(unlist(gene_list$keratinocytes)), 
+                  cluster_col = "SCT_snn_res.0.6",
+                  reduction = "umap", 
+                  output_dir = "./marker_genes/lower_follicle", 
+                  pt_size = 1,
+                  outline_size = 0.25,
+                  concavity = 5,
+                  show_labels = TRUE,
+                  eps = 2,
+                  min_pts = 25,
+                  outlier_percentile = 0.98)
+
+
+subset_obj <- subset(obj, subset = obj$broad_cluster == c("Upper.Follicle"))
+subset_obj <- cluster_subcluster(subset_obj, output_dir = "./marker_genes/")
+Idents(subset_obj) <- "SCT_snn_res.0.6"
+
+plot_marker_genes(obj = subset_obj, 
+                  genes = unique(unlist(gene_list$keratinocytes)), 
+                  cluster_col = "SCT_snn_res.0.6",
+                  reduction = "umap", 
+                  output_dir = "./marker_genes/upper_follicle", 
+                  pt_size = 1,
+                  outline_size = 0.25,
+                  concavity = 5,
+                  show_labels = TRUE,
+                  eps = 2,
+                  min_pts = 25,
+                  outlier_percentile = 0.98)

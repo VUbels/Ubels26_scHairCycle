@@ -120,6 +120,38 @@ filter_by_qc <- function(input_folder, project_names, min_feature = NULL, max_fe
 }
 
 ###############################################################
+# SIMPLE CLUSTERIZATION FOR SUBCLUSTERS
+###############################################################
+
+cluster_subcluster <- function(subset_obj, output_dir) {
+  
+  library(clustree)
+  subset_obj <- PercentageFeatureSet(subset_obj, pattern = "^MT-", col.name = "percent.mt")
+  subset_obj <- SCTransform(subset_obj, vars.to.regress = "percent.mt")
+  subset_obj <- RunPCA(subset_obj)
+  subset_obj <- RunUMAP(subset_obj, dims = 1:30)
+  subset_obj <- FindNeighbors(subset_obj, dims = 1:30)
+  subset_obj <- FindClusters(subset_obj, resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8), algorithm = 1)
+  
+  
+  png(
+    filename = file.path(output_dir, ("clustree.png")),
+    width = 5,
+    height = 5,
+    units = "in",
+    res = 300
+  )
+  
+  p <- clustree(subset_obj, prefix = "SCT_snn_res.")
+  print(p)
+  
+  dev.off()
+  
+  return(subset_obj)
+  
+}
+
+###############################################################
 # INTEGRATE SCRNA DATA USING SCANORAMA (PYTHON SCRIPT)
 ###############################################################
 
@@ -502,6 +534,55 @@ visualize_percentage_clusters <- function(seurat_obj, clusters, phases, output_d
          bty = "n")
   
   dev.off()
+}
+
+##############################################################################
+# GRAB FEATURE GENES FOR DIFFERENTIAL GENE EXPRESSION ANALYSIS
+##############################################################################
+
+get_blacklist_genes <- function(seurat_obj) {
+  
+  library(GenomicFeatures)
+  library(org.Hs.eg.db)
+  library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+  
+  allGenes <- rownames(seurat_obj)
+  
+  # Mitochondrial
+  mt.genes <- grep(pattern = "^MT-", x = allGenes, value = TRUE)
+  
+  # Ribosomal
+  RPS.genes <- grep(pattern = "^RPS", x = allGenes, value = TRUE)
+  RPL.genes <- grep(pattern = "^RPL", x = allGenes, value = TRUE)
+  
+  # X/Y chromosome genes
+  txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+  geneGR <- GenomicFeatures::genes(txdb)
+  sexGenesGR <- geneGR[seqnames(geneGR) %in% c("chrY", "chrX")]
+  matchedGeneSymbols <- AnnotationDbi::select(org.Hs.eg.db,
+                                              keys = sexGenesGR$gene_id,
+                                              columns = c("ENTREZID", "SYMBOL"),
+                                              keytype = "ENTREZID")
+  sexChr.genes <- matchedGeneSymbols$SYMBOL
+  
+  # Cell cycle genes
+  s.genes <- cc.genes$s.genes
+  g2m.genes <- cc.genes$g2m.genes
+  
+  blacklist.genes <- unique(c(
+    mt.genes,
+    sexChr.genes,
+    s.genes,
+    g2m.genes,
+    RPS.genes,
+    RPL.genes
+  ))
+  
+  # Only return genes present in the data
+  blacklist.genes <- blacklist.genes[blacklist.genes %in% allGenes]
+  
+  message(paste("Blacklisted", length(blacklist.genes), "genes"))
+  return(blacklist.genes)
 }
 
 
