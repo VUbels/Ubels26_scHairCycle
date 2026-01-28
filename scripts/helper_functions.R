@@ -1133,3 +1133,86 @@ add_lineage_label <- function(obj,
   
   return(obj)
 }
+
+#################################################################
+# MCLUST FILTERING + QC PLOT
+#################################################################
+mclust_filter_cells <- function(arrow_file, min_tss = 5, min_frags = 1000, plot_dir = NULL) {
+  
+  sample_name <- gsub("\\.arrow$", "", basename(arrow_file))
+  message(paste0("Processing: ", sample_name))
+  
+  # Read QC data from Arrow
+  cell_names <- h5read(arrow_file, "Metadata/CellNames")
+  nFrags <- h5read(arrow_file, "Metadata/nFrags")
+  TSSEnrichment <- h5read(arrow_file, "Metadata/TSSEnrichment")
+  
+  df <- data.frame(
+    cellNames = cell_names,
+    nFrags = nFrags,
+    TSSEnrichment = TSSEnrichment,
+    log10_nFrags = log10(nFrags + 1),
+    stringsAsFactors = FALSE
+  )
+  
+  # Fit 2-4 Gaussians
+  mclust_input <- df[, c("log10_nFrags", "TSSEnrichment")]
+  fit <- Mclust(mclust_input, G = 2:4, modelNames = "VVV")
+  df$cluster <- fit$classification
+  
+  # Identify best cluster (highest mean TSS)
+  cluster_means <- df %>%
+    group_by(cluster) %>%
+    summarise(mean_TSS = mean(TSSEnrichment), .groups = "drop")
+  best_cluster <- cluster_means$cluster[which.max(cluster_means$mean_TSS)]
+  
+  # Label cells
+  df$passed <- df$cluster == best_cluster & 
+    df$TSSEnrichment >= min_tss & 
+    df$nFrags >= min_frags
+  
+  n_passed <- sum(df$passed)
+  
+  # ADD SAMPLE PREFIX HERE - inside the function
+  valid_cells <- paste0(sample_name, "#", df$cellNames[df$passed])
+  
+  message(paste0("  Retained: ", n_passed, " / ", nrow(df)))
+  
+  # Generate QC plot
+  if (!is.null(plot_dir)) {
+    
+    p <- ggplot(df, aes(x = log10_nFrags, y = TSSEnrichment)) +
+      geom_point(data = df[!df$passed, ], color = "grey80", size = 0.5, alpha = 0.5) +
+      stat_density_2d(
+        data = df[df$passed, ],
+        aes(fill = after_stat(density)),
+        geom = "raster",
+        contour = FALSE
+      ) +
+      scale_fill_viridis_c(option = "H", name = "Density") +
+      geom_hline(yintercept = min_tss, linetype = "dashed", color = "black") +
+      geom_vline(xintercept = log10(min_frags), linetype = "dashed", color = "black") +
+      labs(
+        title = paste0(sample_name, " ", n_passed, " Cells"),
+        x = expression(Log[10] ~ "Unique Fragments"),
+        y = "TSS Enrichment"
+      ) +
+      xlim(3, 5.5) +
+      ylim(0, 20) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(color = "forestgreen", face = "bold", size = 12),
+        legend.position = "none"
+      )
+    
+    ggsave(
+      filename = file.path(plot_dir, paste0(sample_name, "_mclust_QC.png")),
+      plot = p,
+      width = 4,
+      height = 4,
+      dpi = 150
+    )
+  }
+  
+  return(valid_cells)
+}
