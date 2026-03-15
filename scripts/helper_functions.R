@@ -120,18 +120,80 @@ filter_by_qc <- function(input_folder, project_names, min_feature = NULL, max_fe
 }
 
 ###############################################################
+# TOP EXPRESSED GENES PER CLUSTER
+###############################################################
+
+top_expressed_per_cluster <- function(obj,
+                                      cluster_col = NULL,
+                                      n_genes = 10,
+                                      layer = "data",
+                                      assay = NULL) {
+  
+  if (is.null(assay)) assay <- DefaultAssay(obj)
+  
+  expr <- GetAssayData(obj, assay = assay, layer = layer)
+  
+  # Exclude mitochondrial and ribosomal genes
+  exclude <- grepl("^MT-|^mt-|^RPL|^RPS", rownames(expr))
+  expr <- expr[!exclude, , drop = FALSE]
+  
+  if (is.null(cluster_col)) {
+    groups <- Idents(obj)
+  } else {
+    groups <- obj@meta.data[[cluster_col]]
+  }
+  names(groups) <- colnames(obj)
+  
+  results <- lapply(sort(unique(groups)), function(cl) {
+    
+    cells <- names(groups)[groups == cl]
+    mat <- expr[, cells, drop = FALSE]
+    
+    gene_mean <- Matrix::rowMeans(mat)
+    gene_pct  <- Matrix::rowSums(mat > 0) / length(cells) * 100
+    
+    top_idx <- order(gene_mean, decreasing = TRUE)[seq_len(min(n_genes, length(gene_mean)))]
+    
+    data.frame(
+      cluster   = cl,
+      gene      = rownames(mat)[top_idx],
+      mean_expr = round(gene_mean[top_idx], 4),
+      pct_expr  = round(gene_pct[top_idx], 2),
+      rank      = seq_along(top_idx),
+      row.names = NULL
+    )
+  })
+  
+  do.call(rbind, results)
+}
+
+###############################################################
 # SIMPLE CLUSTERIZATION FOR SUBCLUSTERS
 ###############################################################
 
 cluster_subcluster <- function(subset_obj, output_dir) {
   
+  library()
+  library(GenomicFeatures)
+  library(TxDb.Hsapiens.UCSC.hg38.knownGene)
   library(clustree)
+  
   subset_obj <- PercentageFeatureSet(subset_obj, pattern = "^MT-", col.name = "percent.mt")
-  subset_obj <- SCTransform(subset_obj, vars.to.regress = "percent.mt")
+  subset_obj <- SCTransform(subset_obj, vars.to.regress = "percent.mt", variable.features.n = 5000)
+  
+  # Remove blacklist genes from variable features so they don't
+  # drive PCA/clustering. Genes remain in the object for downstream use.
+  blacklist <- get_blacklist_genes(subset_obj)
+  var_feats <- VariableFeatures(subset_obj)
+  VariableFeatures(subset_obj) <- setdiff(var_feats, blacklist)
+  message(paste("Variable features:", length(var_feats), "->", 
+                length(VariableFeatures(subset_obj)), 
+                "(removed", length(intersect(var_feats, blacklist)), "blacklisted)"))
+  
   subset_obj <- RunPCA(subset_obj)
-  subset_obj <- RunUMAP(subset_obj, dims = 1:30)
-  subset_obj <- FindNeighbors(subset_obj, dims = 1:30)
-  subset_obj <- FindClusters(subset_obj, resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8), algorithm = 1)
+  subset_obj <- RunUMAP(subset_obj, dims = 1:40)
+  subset_obj <- FindNeighbors(subset_obj, dims = 1:40)
+  subset_obj <- FindClusters(subset_obj, resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0), algorithm = 1)
   
   
   png(
@@ -149,6 +211,72 @@ cluster_subcluster <- function(subset_obj, output_dir) {
   
   return(subset_obj)
   
+}
+
+subcluster_and_markers <- function(
+    obj,
+    cluster_name,
+    cluster_col = "fine_clust",
+    resolution = 0.4,
+    dims = 1:20,
+    npcs = 30,
+    min_pct = 0.25,
+    logfc_threshold = 0.25
+) {
+  
+  message("Subsetting cluster: ", cluster_name)
+  
+  # identify cells
+  cells_use <- colnames(obj)[obj@meta.data[[cluster_col]] == cluster_name]
+  
+  if (length(cells_use) == 0) {
+    stop(paste("No cells found for", cluster_name))
+  }
+  
+  # subset object
+  sub_obj <- subset(obj, cells = cells_use)
+  
+  # recluster
+  sub_obj <- RunPCA(sub_obj, npcs = npcs, verbose = FALSE)
+  sub_obj <- FindNeighbors(sub_obj, dims = dims)
+  sub_obj <- FindClusters(sub_obj, resolution = resolution)
+  sub_obj <- RunUMAP(sub_obj, dims = dims)
+  
+  # markers
+  sub_markers <- FindAllMarkers(
+    sub_obj,
+    only.pos = TRUE,
+    min.pct = min_pct,
+    logfc.threshold = logfc_threshold
+  )
+  
+  return(list(
+    sub_obj = sub_obj,
+    sub_markers = sub_markers
+  ))
+}
+
+insert_subclusters <- function(
+    obj,
+    sub_obj,
+    sub_map,
+    new_col = "fine_clust"
+) {
+  
+  # get subcluster IDs
+  sub_ids <- as.character(Idents(sub_obj))
+  
+  # convert to biological labels
+  new_labels <- sub_map[sub_ids]
+  
+  if (any(is.na(new_labels))) {
+    stop("Some subclusters are missing from sub_map")
+  }
+  
+  # insert back into original object
+  obj[[new_col]][colnames(sub_obj), 1] <- new_labels
+  
+  return(obj)
 }
 
 ###############################################################
@@ -542,10 +670,6 @@ visualize_percentage_clusters <- function(seurat_obj, clusters, phases, output_d
 
 get_blacklist_genes <- function(seurat_obj) {
   
-  library(GenomicFeatures)
-  library(org.Hs.eg.db)
-  library(TxDb.Hsapiens.UCSC.hg38.knownGene)
-  
   allGenes <- rownames(seurat_obj)
   
   # Mitochondrial
@@ -555,15 +679,26 @@ get_blacklist_genes <- function(seurat_obj) {
   RPS.genes <- grep(pattern = "^RPS", x = allGenes, value = TRUE)
   RPL.genes <- grep(pattern = "^RPL", x = allGenes, value = TRUE)
   
-  # X/Y chromosome genes
-  txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
-  geneGR <- GenomicFeatures::genes(txdb)
-  sexGenesGR <- geneGR[seqnames(geneGR) %in% c("chrY", "chrX")]
-  matchedGeneSymbols <- AnnotationDbi::select(org.Hs.eg.db,
-                                              keys = sexGenesGR$gene_id,
-                                              columns = c("ENTREZID", "SYMBOL"),
-                                              keytype = "ENTREZID")
-  sexChr.genes <- matchedGeneSymbols$SYMBOL
+  # X/Y chromosome genes - attempt DB lookup, fall back to pattern matching
+  sexChr.genes <- tryCatch({
+    library(GenomicFeatures)
+    library(org.Hs.eg.db)
+    library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+    
+    txdb <- TxDb.Hsapiens.UCSC.hg38.knownGene
+    geneGR <- GenomicFeatures::genes(txdb)
+    sexGenesGR <- geneGR[seqnames(geneGR) %in% c("chrY", "chrX")]
+    matchedGeneSymbols <- AnnotationDbi::select(org.Hs.eg.db,
+                                                keys = sexGenesGR$gene_id,
+                                                columns = c("ENTREZID", "SYMBOL"),
+                                                keytype = "ENTREZID")
+    message("Sex chromosome genes retrieved from TxDb")
+    matchedGeneSymbols$SYMBOL
+  }, error = function(e) {
+    message("TxDb unavailable, using pattern-based sex chromosome filtering")
+    grep(pattern = "^XIST$|^TSIX$|^RPS4Y|^DDX3Y|^USP9Y|^UTY$|^KDM5D|^EIF1AY|^ZFY$|^SRY$|^NLGN4Y",
+         x = allGenes, value = TRUE)
+  })
   
   # Cell cycle genes
   s.genes <- cc.genes$s.genes
@@ -581,7 +716,13 @@ get_blacklist_genes <- function(seurat_obj) {
   # Only return genes present in the data
   blacklist.genes <- blacklist.genes[blacklist.genes %in% allGenes]
   
-  message(paste("Blacklisted", length(blacklist.genes), "genes"))
+  message(paste("Blacklisted", length(blacklist.genes), "genes",
+                "(MT:", length(mt.genes),
+                "RPL:", length(RPL.genes),
+                "RPS:", length(RPS.genes),
+                "Sex:", length(intersect(sexChr.genes, allGenes)),
+                "CC:", length(intersect(c(s.genes, g2m.genes), allGenes)), ")"))
+  
   return(blacklist.genes)
 }
 
@@ -1111,17 +1252,38 @@ add_lineage_label <- function(obj,
                               selected_cells, 
                               feature, 
                               threshold, 
-                              label_name = NULL) {
+                              label_name = NULL,
+                              assay = NULL) {
   
   if (is.null(label_name)) {
     label_name <- paste0(feature, "_Lineage")
   }
   
-  expr <- FetchData(obj, vars = feature)[, 1]
-  names(expr) <- colnames(obj)
+  # Direct data access is much faster than FetchData
+  if (is.null(assay)) {
+    assay <- DefaultAssay(obj)
+  }
+  
+  # Check if assay exists
+  if (!assay %in% names(obj@assays)) {
+    stop(paste("Assay", assay, "not found. Available:", 
+               paste(names(obj@assays), collapse = ", ")))
+  }
+  
+  # Get expression directly from the data layer
+  data_mat <- GetAssayData(obj, assay = assay, layer = "data")
+  
+  if (!feature %in% rownames(data_mat)) {
+    stop(paste("Feature", feature, "not found in assay", assay))
+  }
+  
+  expr <- data_mat[feature, ]
   
   in_region <- colnames(obj) %in% selected_cells
   above_threshold <- expr >= threshold
+  
+  # Handle NA values (e.g., scATAC cells won't have Spatial assay data)
+  above_threshold[is.na(above_threshold)] <- FALSE
   
   obj@meta.data[[label_name]] <- in_region & above_threshold
   
@@ -1173,7 +1335,7 @@ mclust_filter_cells <- function(arrow_file, min_tss = 5, min_frags = 1000, plot_
   
   n_passed <- sum(df$passed)
   
-  # ADD SAMPLE PREFIX HERE - inside the function
+ # Add sample prefix
   valid_cells <- paste0(sample_name, "#", df$cellNames[df$passed])
   
   message(paste0("  Retained: ", n_passed, " / ", nrow(df)))
@@ -1215,4 +1377,230 @@ mclust_filter_cells <- function(arrow_file, min_tss = 5, min_frags = 1000, plot_
   }
   
   return(valid_cells)
+}
+
+
+#################################################################
+# BOR_THEME FOR PLOTS
+#################################################################
+
+# Clean theme for plots
+
+theme_BOR <- function(border = TRUE) {
+  theme_classic() +
+    theme(
+      panel.border = if(border) element_rect(color = "black", fill = NA, size = 0.5) else element_blank(),
+      axis.line = element_blank(),
+      strip.background = element_blank(),
+      strip.text = element_text(face = "bold")
+    )
+}
+
+#################################################################
+# CALCULTING AVERAGE EXPRESSION AND PERCENT EXPRESSION PER GROUP
+#################################################################
+
+#' For each gene and each group (cluster), computes:
+#' - avgExpr: mean expression across cells in that group (optionally normalized)
+#' - pctExpr: percentage of cells with expression > 0
+#'
+#' @param mat Expression/score matrix (genes x cells)
+#' @param groups Vector of group assignments per cell
+#' @param feature_normalize Scale each gene to 0-1 range across groups
+#' @param min_pct Minimum percent expressing to include
+#' 
+avg_prct_expression <- function(mat, groups, feature_normalize = TRUE, min_pct = 0) {
+  
+  # Ensure groups align with matrix columns
+  groups <- as.character(groups)
+  unique_groups <- unique(groups) %>% sort()
+  
+  results <- lapply(unique_groups, function(grp) {
+    
+    # Cells in this group
+    cells_in_grp <- which(groups == grp)
+    
+    if (length(cells_in_grp) == 0) return(NULL)
+    
+    # Subset matrix to this group
+    sub_mat <- mat[, cells_in_grp, drop = FALSE]
+    
+    # Average expression per gene
+    avg_expr <- rowMeans(sub_mat, na.rm = TRUE)
+    
+    # Percent of cells expressing (value > 0)
+    pct_expr <- rowSums(sub_mat > 0, na.rm = TRUE) / ncol(sub_mat) * 100
+    
+    data.frame(
+      feature = rownames(mat),
+      grp = grp,
+      avgExpr = avg_expr,
+      pctExpr = pct_expr,
+      stringsAsFactors = FALSE
+    )
+  })
+  
+  df <- do.call(rbind, results)
+  
+  # Feature normalization: scale each gene's avgExpr to 0-1 range
+  # This allows comparison across genes with different expression magnitudes
+  if (feature_normalize) {
+    df <- df %>%
+      group_by(feature) %>%
+      mutate(avgExpr = (avgExpr - min(avgExpr)) / (max(avgExpr) - min(avgExpr) + 1e-9)) %>%
+      ungroup()
+  }
+  
+  # Filter by minimum percent expressing
+  if (min_pct > 0) {
+    df <- df %>% filter(pctExpr >= min_pct)
+  }
+  
+  return(as.data.frame(df))
+}
+
+#################################################################
+# DOTPLOT TO VISUALIZE GENE MARKER EXPRESSION
+#################################################################
+
+plot_dotplot <- function(df, xcol, ycol, color_col, size_col, 
+                    xorder = NULL, yorder = NULL, cmap = NULL, 
+                    color_label = NULL, size_label = NULL, 
+                    aspectRatio = NULL, sizeLims = NULL, colorLims = NULL) {
+  
+  # Set order of axes (important for interpretability)
+  if (is.null(xorder)) xorder <- unique(df[, xcol]) %>% sort()
+  if (is.null(yorder)) yorder <- unique(df[, ycol]) %>% sort()
+  if (is.null(aspectRatio)) aspectRatio <- length(yorder) / length(xorder)
+  
+  df[, xcol] <- factor(df[, xcol], levels = xorder)
+  df[, ycol] <- factor(df[, ycol], levels = yorder)
+  df <- df[order(df[, xcol], df[, ycol]), ]
+  
+  # Build plot
+  p <- ggplot(df, aes(
+    x = .data[[xcol]], 
+    y = .data[[ycol]], 
+    color = .data[[color_col]], 
+    size = ifelse(.data[[size_col]] > 0, .data[[size_col]], NA)
+  )) +
+    geom_point() +
+    xlab(xcol) +
+    ylab(ycol) +
+    theme_BOR(border = TRUE) +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.margin = unit(c(0.25, 0.5, 0.25, 1), "cm"),
+      aspect.ratio = aspectRatio,
+      axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+    ) +
+    guides(
+      colour = guide_colorbar(title = color_label),
+      size = guide_legend(title = size_label)
+    )
+  
+  # Color scale
+  if (!is.null(cmap)) {
+    if (!is.null(colorLims)) {
+      p <- p + scale_color_gradientn(colors = cmap, limits = colorLims, oob = scales::squish)
+    } else {
+      p <- p + scale_color_gradientn(colors = cmap)
+    }
+  } else {
+    p <- p + scale_color_viridis_c(option = "magma")
+  }
+  
+  # Size scale
+  if (!is.null(sizeLims)) {
+    p <- p + scale_size_continuous(limits = sizeLims, range = c(0.5, 5))
+  } else {
+    p <- p + scale_size_continuous(range = c(0.5, 5))
+  }
+  
+  return(p)
+}
+
+################################################################
+# JACCARD SIMILARITY BETWEEN DATASETS
+################################################################
+
+run_metaneighbor <- function(
+    scrna_obj,
+    vis_obj,
+    scrna_labels = "fine_clust",
+    vis_labels = "celltype_final",
+    assay_scrna = NULL,
+    assay_vis = NULL,
+    use_variable_genes = TRUE,
+    n_var_genes = 2000,
+    plot = TRUE,
+    n_cores = 1
+){
+  library(Seurat)
+  library(Matrix)
+  library(MetaNeighbor)
+  library(pheatmap)
+  library(BiocParallel)
+  
+  if (is.null(assay_scrna)) assay_scrna <- DefaultAssay(scrna_obj)
+  if (is.null(assay_vis)) assay_vis <- DefaultAssay(vis_obj)
+  
+  # Step 1: Select variable genes
+  shared_genes <- intersect(rownames(scrna_obj[[assay_scrna]]),
+                            rownames(vis_obj[[assay_vis]]))
+  
+  if (use_variable_genes) {
+    var_genes <- unique(c(VariableFeatures(scrna_obj),
+                          VariableFeatures(vis_obj)))
+    var_genes <- intersect(var_genes, shared_genes)
+    var_genes <- var_genes[seq_len(min(length(var_genes), n_var_genes))]
+  } else {
+    var_genes <- shared_genes
+  }
+  
+  # Step 2: Extract sparse matrices (variable genes only)
+  mat_list <- list(
+    scRNA = GetAssayData(scrna_obj, assay = assay_scrna, layer = "data")[var_genes, ],
+    Visium = GetAssayData(vis_obj, assay = assay_vis, layer = "data")[var_genes, ]
+  )
+  
+  # Step 3: Prepare metadata
+  dataset_labels <- unlist(lapply(names(mat_list), function(n) rep(n, ncol(mat_list[[n]]))))
+  celltype_labels <- c(as.vector(scrna_obj[[scrna_labels]]),
+                       as.vector(vis_obj[[vis_labels]]))
+  
+  metadata <- data.frame(dataset = dataset_labels, celltype = celltype_labels)
+  rownames(metadata) <- unlist(lapply(mat_list, colnames))
+  
+  # Step 4: Create SummarizedExperiment (no combined cbind2)
+  # We just store the list in assays, MetaNeighbor works on one assay at a time
+  se <- SummarizedExperiment(
+    assays = SimpleList(data = mat_list$scRNA)  # main assay, can be any dataset
+  )
+  
+  # Step 5: Run MetaNeighborUS on variable genes with parallel
+  result <- MetaNeighborUS(
+    var_genes = var_genes,
+    dat = se,
+    study_id = metadata$dataset,
+    cell_type = metadata$celltype,
+    BPPARAM = MulticoreParam(workers = n_cores)
+  )
+  
+  scrna_types <- unique(metadata$celltype[metadata$dataset == "scRNA"])
+  vis_types   <- unique(metadata$celltype[metadata$dataset == "Visium"])
+  
+  similarity_matrix <- result[as.character(scrna_types), as.character(vis_types)]
+  
+  # Step 6: Plot
+  if (plot) {
+    pal <- colorRampPalette(c("#272E6A","white","#D51F26"))(100)
+    pheatmap(similarity_matrix,
+             color = pal,
+             main = "MetaNeighbor similarity (AUROC)",
+             border_color = NA)
+  }
+  
+  return(similarity_matrix)
 }
