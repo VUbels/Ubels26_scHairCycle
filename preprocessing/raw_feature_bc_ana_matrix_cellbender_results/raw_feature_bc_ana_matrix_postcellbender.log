@@ -2,7 +2,7 @@ cellbender:remove-background: Command:
 cellbender remove-background --input /mnt/d/scrna_datasets/ubels26_scrna_dataset/raw_feature_bc_ana_matrix.h5 --output .//preprocessing//raw_feature_bc_ana_matrix_cellbender_results/raw_feature_bc_ana_matrix_postcellbender.h5 --cuda --epochs 150 --learning-rate 0.000050
 cellbender:remove-background: CellBender 0.3.2
 cellbender:remove-background: (Workflow hash 88073c4ba2)
-cellbender:remove-background: 2026-01-18 15:06:26
+cellbender:remove-background: 2026-03-16 15:00:15
 cellbender:remove-background: Running remove-background
 cellbender:remove-background: Loading data from /mnt/d/scrna_datasets/ubels26_scrna_dataset/raw_feature_bc_ana_matrix.h5
 cellbender:remove-background: CellRanger v3 format
@@ -17,12 +17,3 @@ cellbender:remove-background: Trimming barcodes for inference.
 cellbender:remove-background: Excluding barcodes with counts below 36
 cellbender:remove-background: Using 8647 probable cell barcodes, plus an additional 32654 barcodes, and 118285 empty droplets.
 cellbender:remove-background: Largest surely-empty droplet has 160 UMI counts.
-cellbender:remove-background: Attempting to unpack tarball "ckpt.tar.gz" to /tmp/tmpkchydya1
-cellbender:remove-background: No saved checkpoint.
-cellbender:remove-background: No checkpoint loaded.
-cellbender:remove-background: Running inference...
-cellbender:remove-background: Inference procedure stopped by keyboard interrupt... will save a checkpoint.
-cellbender:remove-background: Saving a checkpoint...
-cellbender:remove-background: Keyboard interrupt: will not save checkpoint
-cellbender:remove-background: 2026-01-18 15:06:51
-cellbender:remove-background: Inference procedure complete.

@@ -12,3 +12,8 @@
 *.csv
 *.html
 *.arrow
+*.log
+*.tar
+
+**/ImputeWeights/
+**/tmp/

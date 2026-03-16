@@ -171,30 +171,35 @@ top_expressed_per_cluster <- function(obj,
 # SIMPLE CLUSTERIZATION FOR SUBCLUSTERS
 ###############################################################
 
-cluster_subcluster <- function(subset_obj, output_dir) {
+cluster_subcluster <- function(obj, output_dir) {
   
-  library()
   library(GenomicFeatures)
   library(TxDb.Hsapiens.UCSC.hg38.knownGene)
   library(clustree)
   
-  subset_obj <- PercentageFeatureSet(subset_obj, pattern = "^MT-", col.name = "percent.mt")
-  subset_obj <- SCTransform(subset_obj, vars.to.regress = "percent.mt", variable.features.n = 5000)
+  obj <- PercentageFeatureSet(obj, pattern = "^MT-", col.name = "percent.mt")
+  obj <- PercentageFeatureSet(obj, pattern = "^RP[LS]", col.name = "percent.ribo")
+  
+  obj <- SCTransform(
+    obj,
+    n_genes = 3000,
+    vars.to.regress = c("percent.mt", "percent.ribo"), 
+    variable.features.n = 4000
+  )
   
   # Remove blacklist genes from variable features so they don't
   # drive PCA/clustering. Genes remain in the object for downstream use.
-  blacklist <- get_blacklist_genes(subset_obj)
-  var_feats <- VariableFeatures(subset_obj)
-  VariableFeatures(subset_obj) <- setdiff(var_feats, blacklist)
+  blacklist <- get_blacklist_genes(obj)
+  var_feats <- VariableFeatures(obj)
+  VariableFeatures(obj) <- setdiff(var_feats, blacklist)
   message(paste("Variable features:", length(var_feats), "->", 
-                length(VariableFeatures(subset_obj)), 
+                length(VariableFeatures(obj)), 
                 "(removed", length(intersect(var_feats, blacklist)), "blacklisted)"))
   
-  subset_obj <- RunPCA(subset_obj)
-  subset_obj <- RunUMAP(subset_obj, dims = 1:40)
-  subset_obj <- FindNeighbors(subset_obj, dims = 1:40)
-  subset_obj <- FindClusters(subset_obj, resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0), algorithm = 1)
-  
+  obj <- RunPCA(obj)
+  obj <- RunUMAP(obj, dims = 1:40)
+  obj <- FindNeighbors(obj, dims = 1:40)
+  obj <- FindClusters(obj, resolution = c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0), algorithm = 1)
   
   png(
     filename = file.path(output_dir, ("clustree.png")),
@@ -204,12 +209,12 @@ cluster_subcluster <- function(subset_obj, output_dir) {
     res = 300
   )
   
-  p <- clustree(subset_obj, prefix = "SCT_snn_res.")
+  p <- clustree(obj, prefix = "SCT_snn_res.")
   print(p)
   
   dev.off()
   
-  return(subset_obj)
+  return(obj)
   
 }
 
@@ -217,11 +222,11 @@ subcluster_and_markers <- function(
     obj,
     cluster_name,
     cluster_col = "fine_clust",
-    resolution = 0.4,
+    resolution = 0.5,
     dims = 1:20,
     npcs = 30,
-    min_pct = 0.25,
-    logfc_threshold = 0.25
+    min_pct = 0.1,
+    logfc_threshold = 0.5
 ) {
   
   message("Subsetting cluster: ", cluster_name)

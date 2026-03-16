@@ -72,13 +72,13 @@ py_location <- "/home/uvictor/miniconda3/bin/conda"
 # for when low cell count has high gene expression in a particular cluster
 obj <- cluster_subcluster(obj, output_dir = "./")
 
-Idents(obj) <- "SCT_snn_res.0.8"
+Idents(obj) <- "SCT_snn_res.0.7"
 broad_markers <- FindAllMarkers(obj, min.pct = 0.1, logfc.threshold = 1, only.pos = TRUE)
 write.csv(broad_markers, file = "./marker_genes/broad_markers.csv")
 
 plot_marker_genes(obj = obj, 
                   genes = broad_gene_list, 
-                  cluster_col = "SCT_snn_res.0.8",
+                  cluster_col = "SCT_snn_res.0.7",
                   reduction = "umap", 
                   output_dir = "./marker_genes/broad_markers", 
                   pt_size = 1,
@@ -166,85 +166,64 @@ saveRDS(vis_obj, file = "./annotated_vis_obj.rds")
 #################################################################
 
 broad_cluster_identification <- list(
-  `0` = "Germinal.Centre",           #GPX2/MOXD1/BMERB1
-  `1` = "ORS.Suprabasal.1",          #PDZRN3/KRT6/EFNA5/ACTN1
-  `2` = "Upper.Bulge.1",             #DKK3/DIO2
-  `3` = "Epid.Spinous.1",            #KRT1/KRT10/KRTDAP
-  `4` = "Endothelial.1",             #PECAM1/VWF/PLVAP
-  `5` = "Lower.Bulge.1",             #THBS2/LGR5/COMP
-  `6` = "Center.Bulge.2",
-  `7` = "Dermal.Papilla",            #VCAN/PDGFRA/TWIST2/
-  `8` = "",
-  `9` = "Unspecified",               #Further subclustering necessary
-  `10` = "Upper.Bulge.2",
-  `11` = "Center.Bulge.1",
-  `12` = "Junctional.Zone",          #TMEM45A/KLK6/SPINK5
-  `13` = "Epid.Tran",                #LAMB4/SERPINB2/CDHR1
-  `14` = "Epid.Spinous.2",
-  `15` = "Dermal.Sheath",            #TAGLN/ACTA2/VIM/COL6A2
-  `16` = "",
-  `17` = "Neural.Progenitor",        #CNTNAP2/CTNNA2/FMN2
-  `18` = "",
-  `19` = "Lower.Bulge.2",            #LGR/COMP/EDN2
+  `0` = "Bulge",                     #Further subclustering necessary
+  `1` = "Ishtmus",                   #GPX2/MOXD1/BMERB1/KLK5
+  `2` = "ORS.Suprabasal.1",          #PDZRN3/FABP5/CD82
+  `3` = "Bulge",                     #Further subclustering necessary
+  `4` = "Bulge",                     #Further subclustering necessary
+  `5` = "Endothelial.Vasc",          #PECAM1/VWF/DOCK4/TALAM1
+  `6` = "Junctional.Zone",           #TMEM45A/KLK6/SPINK5/S100A8
+  `7` = "Epid.Tran.1",               #NECTIN4/KRT1/SERPINB1
+  `8` = "Dermal.Papilla",            #VCAN/PDGFRA/TWIST2
+  `9` = "ORS.Suprabasal.2",          #SERPINA3/FABP5/CD24
+  `10` = "Bulge",                    #Further subclustering necessary
+  `11` = "Epid.Tran.2",              #TGFA/AQP3/IL1R2
+  `12` = "Basal.KCs",                #WNT3/COL7A1/CDH13
+  `13` = "Dermal.Sheath",            #TAGLN/ACTA2/VIM/COL6A2
+  `14` = "Epid.Spinous",             #KRT1/KRT10/KRTDAP
+  `15` = "Unspecified",              #Further subclustering necessary
+  `16` = "Neural.Progenitor",        #CNTNAP2/CTNNA2/FMN2
+  `17` = "NCSCs",                    #GRIA3/RIMS2/NELL2/NOTCH3
+  `18` = "Bulge",                    #Further subclustering necessary
+  `19` = "Unspecified",              #Further subclustering necessary
   `20` = "Matrix",                   #KRT35/KRT85
-  `21` = "",
-  `22` = "ORS.Suprabasal.2",         #SERPINA3/FABP5/CD24
-  `23` = "T.cells",                  #CD3D/TRBC1
-  `24` = "Endothelial.2",            #PECAM1/VWF/PLVAP
-  `25` = "Melanocytes",              #CDH19/MLANA/SOX10
-  `26` = "Macrophages",              #HLA-DRA/CD74
-  `27` = "Pericytes"                 #RGS5
+  `21` = "TACs",                     #MND1/SPDYA/NEK10
+  `22` = "T.cells",                  #CD3D/TRBC1/PTPRC
+  `23` = "Melanocytes",              #CDH19/MLANA/SOX10
+  `24` = "Endothelial.Cap",          #PECAM1/VWF/EZR
+  `25` = "Macrophages",              #HLA-DRA/CD74
+  `26` = "Pericytes"                 #RGS5
 )
 
-sub_markers <- FindMarkers(obj, ident.1 = "2", ident.2 = "10")
 DimPlot(obj, label = TRUE, split.by = "dataset")
-
 SpatialDimPlot(vis_obj, label = TRUE, repel = TRUE, image.alpha = 0, label.size = 3, pt.size.factor = 5)
 
-gene = "DIO2"
-g1 <- DimPlot(obj, label = TRUE)
-g2 <- FeaturePlot(obj, features = gene, label = TRUE, order = TRUE)
-g3 <- ImageFeaturePlot(vis_obj, features = gene, size = 1)
-plot(g1+g2+g3)
-
-
-obj$broad_cluster <- unname(unlist(broad_cluster_identification[as.character(obj$SCT_snn_res.0.8)]))
+obj$broad_cluster <- unname(unlist(broad_cluster_identification[as.character(obj$SCT_snn_res.0.7)]))
 visualize_percentage_clusters(seurat_obj = obj, clusters = "broad_cluster", phases = "orig.ident", output_dir = paste0(main_folder, "marker_genes"))
-top_genes <- top_expressed_per_cluster(obj, cluster_col = "seurat_clusters", n_genes = 50)
+top_genes <- top_expressed_per_cluster(obj, cluster_col = "SCT_snn_res.0.7", n_genes = 50)
 
-
-#################################################################
-# INITIALIZE FINE CLUSTER COLUMN
-#################################################################
-
-DimPlot(obj, label = TRUE, group.by = "SCT_snn_res.0.8")
-FeaturePlot(obj, feature = "PIP", order = TRUE)
-
-SpatialDimPlot(vis_obj, group.by = "celltype_final", image.alpha = 0, pt.size.factor = 4, label = TRUE, label.size = 3)
-SpatialFeaturePlot(vis_obj, feature = "SERPINA3", image.alpha = 0, pt.size.factor = 4, shape = 21)
+##########################################################
+# FINE GRAINED CLUSTERING FOR NON-STATIAL MATRIX
+##########################################################
 
 # Start with broad labels; subclustering below will overwrite
 # cells belonging to each cohort with finer annotations.
 obj$fine_clust <- obj$broad_cluster
 
-
-##########################################################
-# FINE GRAINED CLUSTERING FOR NON-STATIAL MATRIX
-##########################################################
 res <- subcluster_and_markers(
   obj,
-  cluster_name = "Matrix.Cortex",
+  cluster_name = "Matrix",
   cluster_col = "fine_clust",
-  resolution = 0.2
+  resolution = 0.5
 )
 
 sub_obj <- res$sub_obj
 sub_markers <- res$sub_markers
 
 sub_map <- c(
-  "0" = "Matrix.Cortex", #KRT35/KRT85
-  "1" = "Cuticle",       #KRT25/KRT71/KRT74-
-  "2" = "Matrix.Cortex", #KRT35/KRT85
+  "0" = "Matrix",        #KRT35/KRT85
+  "1" = "Matrix",        #KRT35/KRT85
+  "2" = "IRS",           #KRT25/KRT71/KRT74-
   "3" = "Eccrine.Gland"  #KRT19/PIP/MUCL1
 )
 
@@ -253,6 +232,90 @@ obj <- insert_subclusters(
   sub_obj,
   sub_map
 )
+
+DimPlot(obj, label = TRUE, group.by = "fine_clust")
+
+#############################################################
+# FINE GRAINED CLUSTERING FOR NON-STATIAL UNSPECIFIED CLUSTER
+#############################################################
+
+res <- subcluster_and_markers(
+  obj,
+  cluster_name = "Unspecified",
+  cluster_col = "fine_clust",
+  resolution = 0.5
+)
+
+sub_obj <- res$sub_obj
+sub_markers <- res$sub_markers
+
+DimPlot(sub_obj)
+FeaturePlot(sub_obj, features = "S100A7")
+
+sub_map <- c(
+  "0" = "Bulge",           #KRT15/DIO2/POSTN
+  "1" = "ORS.Suprabasal",  #SERPINA3/KRT16/KRT6B
+  "2" = "Unspecified",     #Ribosomal genes only
+  "3" = "Junctional.Zone", #S100A8/KRTDAP/S100A7
+  "4" = "Bulge"            #COMP/ANGPTL7/LGR5
+  
+)
+
+obj <- insert_subclusters(
+  obj,
+  sub_obj,
+  sub_map
+)
+
+Idents(obj) <- "fine_clust"
+obj <- subset(obj, ident = "Unspecified", invert = TRUE)
+
+##########################################################
+# RECLUSTER AFTER REMOVAL OF UNSPECIFIED CLUSTER
+##########################################################
+
+obj <- cluster_subcluster(obj, output_dir = "./")
+
+Idents(obj) <- "SCT_snn_res.0.6"
+
+DimPlot(obj, label = TRUE)
+
+broad_markers <- FindAllMarkers(obj, min.pct = 0.1, logfc.threshold = 1, only.pos = TRUE)
+write.csv(broad_markers, file = "./marker_genes/broad_markers.csv")
+
+
+gene = "KRT18"
+g1 <- DimPlot(obj, label = TRUE)
+g2 <- FeaturePlot(obj, features = gene, label = TRUE)
+g3 <- ImageFeaturePlot(vis_obj, features = gene, size = 1)
+plot(g1+g2+g3)
+
+broad_markers %>%
+  filter(cluster == 14, !grepl("^RPL|^RPS|^RPLP|EEF1A1|ACTB|TMSB", gene)) %>%
+  arrange(p_val_adj)
+
+agg <- AggregateExpression(obj, group.by = "SCT_snn_res.0.6", normalization.method = "LogNormalize")$RNA
+agg_mat <- as.matrix(agg)
+cor_matrix <- cor(agg_mat)
+
+# Check column names first
+colnames(cor_matrix)
+
+# Then subset using whatever name cluster 14 actually has
+sort(cor_matrix[,"g14"], decreasing = TRUE)[1:6]
+
+markers_14_vs_X <- FindMarkers(
+  obj,
+  ident.1 = "14",
+  ident.2 = "9",  # its nearest neighbour from above
+  group.by = "SCT_snn_res.0.6",
+  logfc.threshold = 0.25,
+  min.pct = 0.1
+)
+
+VlnPlot(obj, 
+        features = c("percent.mt", "nFeature_RNA", "nCount_RNA"), 
+        group.by = "fine_clust")
 
 ##########################################################
 # FINE GRAINED CLUSTERING FOR MATRIX
