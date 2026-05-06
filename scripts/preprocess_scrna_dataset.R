@@ -69,11 +69,11 @@ show_qc_metrics(input_folder = main_folder)
 object.list <- filter_by_qc(
   input_folder = main_folder,
   project_names = dataset_names,
-  min_feature = 150, 
-  max_feature = 7000, 
-  min_count = 200,
+  min_feature = 200, 
+  max_feature = 7500, 
+  min_count = 1000,
   max_count = 50000, 
-  max_percent_mt = 35
+  max_percent_mt = 30
 )
 
 #################################################################
@@ -89,6 +89,11 @@ object.list <- filter_doublets(object.list)
 #################################################################
 # INTEGRATE AND SAVE FILTERED OBJECT
 #################################################################
+#saveRDS(object.list, "./object_list.RDS")
+#object.list <- readRDS("./object_list.RDS")
+
+obj <- Merge_Seurat_List(object.list)
+saveRDS(obj, file = paste0(main_folder, "post_filter_nonintegrated_objects.RDS"))
 
 integrated_obj <- scrna_integrate(
   object.list = object.list,

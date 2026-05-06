@@ -70,17 +70,19 @@ make_seurat_compatible <- function(output_folder) {
     
     for (input_file in filtered_files) {
       
-      # Create output filename
       output_file <- sub("_filtered\\.h5$", "_filtered_seurat.h5", input_file)
       
-      # Build ptrepack command
+      # Remove existing output to avoid node collision
+      if (file.exists(output_file)) {
+        file.remove(output_file)
+      }
+      
       cmd <- sprintf(
         "ptrepack --complevel 5 %s:/matrix %s:/matrix",
         shQuote(input_file),
         shQuote(output_file)
       )
       
-      # Run compression
       message("Compressing: ", basename(input_file))
       exit_code <- system(cmd)
       
